@@ -1,0 +1,98 @@
+---
+title: "Predictive Machine Learning Project"
+output: html_document
+---
+
+The Weight Lifting Exercise Dataset (WLE) as one of the Human Activity Recognition (HAR) systems predicts which activity was performed at a specific time. In the following demonstration we would like to qualify the determined task to let users know how well a task was performed. 
+```{r, echo=FALSE}
+library(caret)
+library(randomForest)
+library(ggplot2)
+data <-read.csv("pml-training.csv")
+nsv <- nearZeroVar(data, saveMetrics=TRUE)
+data <- data[, !nsv$nzv]
+```
+
+## Cleaning the Data
+
+We will now remove missing data. A 'NA' and '' designates missing data; columns that have more than half of the rows filled in will be kept; the others will be thrown away. We will also do away with the first several columns that are only used for sequencing the data.
+
+```{r}
+incompleteData <- sapply(colnames(data), function(x) 
+                          if(sum(is.na(data[, x]) | data[, x] == '') >
+                             0.5*nrow(data)){return(TRUE)}else{return(FALSE)})
+data <- data[, !incompleteData]
+drop <- c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window", "num_window")
+
+data <- data[, !(names(data) %in% drop)]
+```
+
+## Exploratory Analysis
+
+We would like to get a general idea of what the data looks like for various classes. To do this, it is easy to histogram each class accroding to the column. The "histogram" we will use is the "geom_violin()" method. 
+
+```{r}
+p <- ggplot(data, aes(x=data$classe, y=data$gyros_belt_x, colors=data$classe))
+p + geom_violin()
+```
+
+## Dividing up the data
+
+We choose a training sample that is 70% of the original data. We will "quiz" it on the remaining 30% before we subject the model to the testing set.
+
+```{r}
+inTrain = createDataPartition(data$classe, p=0.70, list=FALSE)
+training = data[inTrain,]
+quizzing = data[-inTrain,]
+```
+
+## Developing a Model
+
+We use a random forest model. The data is large and somewhat correlated so this model should work well. 
+
+```{r}
+predictionModel <- randomForest(classe ~ ., data=training)
+print(predictionModel)
+importance(predictionModel)
+```
+
+The confusion matrix shows that there is strong accuracy for this model.
+
+```{r}
+pred1 <-  predict( predictionModel, quizzing, type ="class")
+confusionMatrix(pred1, quizzing$classe)
+```
+Save the model for export.
+```{r}
+save(predictionModel, file="predictionModel.RData")
+```
+
+## The test 
+
+We first load the previous prediction model.
+
+```{r}
+load(file="predictionModel.RData", verbose=TRUE)
+```
+
+
+```{r}
+testData <-read.csv("pml-testing.csv")
+td <- testData[, colnames(testData) %in% colnames(training)]
+#testData <- predict(preProc, td[, valid, with=FALSE])
+out <- predict(predictionModel, td, type = "class")
+#td <- cbind(out , td)
+#subset(td, select=names(td)[grep("belt|[^(fore)]arm|dumbbell|forearm", names(td), invert=TRUE)])
+```
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(out)
+```
